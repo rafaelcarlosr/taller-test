@@ -1,6 +1,7 @@
 plugins {
     java
-    application
+    id("org.springframework.boot") version "3.5.10"
+    id("io.spring.dependency-management") version "1.1.7"
 }
 
 group = "com.taller.test"
@@ -12,37 +13,19 @@ java {
     }
 }
 
-application {
-    mainClass.set("com.taller.test.Main")
-}
-
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    // No external dependencies needed for this project
-    testImplementation(platform("org.junit:junit-bom:5.11.0"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
-}
-
-tasks.named<Test>("test") {
-    useJUnitPlatform()
-}
-
-tasks.named<JavaExec>("run") {
-    standardInput = System.`in`
-}
-
-// Enable preview features for Java 25
-tasks.withType<JavaCompile> {
-    options.compilerArgs.add("--enable-preview")
+    implementation("org.springframework.boot:spring-boot-starter-web")
+    testImplementation("org.springframework.boot:spring-boot-starter-test") {
+        exclude(group = "org.mockito", module = "mockito-core")
+    }
+    testImplementation("org.mockito:mockito-inline:5.2.0")
 }
 
 tasks.withType<Test> {
-    jvmArgs("--enable-preview")
-}
-
-tasks.withType<JavaExec> {
-    jvmArgs("--enable-preview")
+    useJUnitPlatform()
+    jvmArgs("--add-opens", "java.base/java.lang=ALL-UNNAMED")
 }

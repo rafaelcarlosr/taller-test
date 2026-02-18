@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: payment-statistics-calculator
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.payment: INFO
+    org.springframework.web: INFO

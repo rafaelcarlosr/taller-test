@@ -3,13 +3,23 @@ package com.taller.test.model;
 import java.math.BigDecimal;
 import java.util.Objects;
 
+/**
+ * Represents a payment transaction using a Java Record.
+ * Java 16+ Feature: Records provide immutable data classes with automatic implementations.
+ * Java 25 Feature: Enhanced pattern matching with records
+ *
+ * Uses BigDecimal for monetary amounts to avoid floating-point precision issues.
+ */
 public record Payment(
     String id,
     BigDecimal amount,
     String currency,
     PaymentStatus status
 ) {
-
+    /**
+     * Compact constructor with validation.
+     * This runs before field initialization.
+     */
     public Payment {
         Objects.requireNonNull(id, "Payment ID cannot be null");
         Objects.requireNonNull(amount, "Payment amount cannot be null");
@@ -23,6 +33,10 @@ public record Payment(
         }
     }
 
+    /**
+     * Returns a formatted description of the payment using pattern matching.
+     * Java 25 Feature: Enhanced pattern matching with switch expressions
+     */
     public String getDescription() {
         return switch (status) {
             case SUCCESS -> String.format("✓ Payment %s succeeded: %s %s", id, amount, currency);
@@ -31,6 +45,10 @@ public record Payment(
         };
     }
 
+    /**
+     * Validates the payment using pattern matching.
+     * Java 25 Feature: Pattern matching with guards
+     */
     public String validate() {
         return switch (this) {
             case Payment p when p.amount.compareTo(BigDecimal.ZERO) <= 0 ->
@@ -45,6 +63,10 @@ public record Payment(
         };
     }
 
+    /**
+     * Custom equals using enhanced pattern matching (Java 25).
+     * Note: Records already provide equals(), but this demonstrates pattern matching.
+     */
     public boolean equalsWithPatternMatching(Object o) {
         return switch (o) {
             case null -> false;
@@ -57,6 +79,10 @@ public record Payment(
         };
     }
 
+    /**
+     * Custom toString with enhanced formatting.
+     * Note: Records auto-generate toString(), but this provides custom formatting.
+     */
     @Override
     public String toString() {
         return String.format("Payment{id='%s', amount=%s, currency='%s', status=%s}",

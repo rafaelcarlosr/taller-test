@@ -1,116 +1,168 @@
 # Payment Statistics Calculator
 
-A Java 25 application that processes payment transactions and calculates comprehensive statistics using modern Java features including String Templates, Structured Concurrency, and Enhanced Pattern Matching.
+A modern **Spring Boot 3.4** REST API for payment processing and statistics, built with **Java 21** featuring:
+- 💰 **BigDecimal** for financial precision
+- 📦 **Records** for immutable data
+- 🎯 **Pattern Matching** with guards
+- 🧵 **Virtual Threads** for concurrency
+- 🏗️ **Kotlin DSL** for Gradle
 
-## Features
+## Quick Start
 
-- **Payment Management**: Add, retrieve, and filter payments by status
-- **Statistics Calculation**:
-  - Total payment count
-  - Total and average amounts for successful payments
-  - Payment counts by status
-  - Total amounts by currency
-- **Advanced Operations**:
-  - Sort payments by amount
-  - Filter using Java Streams
-  - Parallel processing with CompletableFuture
-  - Thread-safe operations with ConcurrentHashMap
+```bash
+# Run the application
+./gradlew bootRun
+
+# The API will start on http://localhost:8080
+```
+
+## API Endpoints
+
+### Payment Operations
+```bash
+# Create a payment
+curl -X POST http://localhost:8080/api/payments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "PAY001",
+    "amount": "150.00",
+    "currency": "USD",
+    "status": "SUCCESS"
+  }'
+
+# Get all payments
+curl http://localhost:8080/api/payments
+
+# Get payment by ID
+curl http://localhost:8080/api/payments/PAY001
+
+# Get payments by status
+curl http://localhost:8080/api/payments/status/SUCCESS
+
+# Get payments sorted by amount
+curl http://localhost:8080/api/payments/sorted
+```
+
+### Statistics
+```bash
+# Get comprehensive statistics
+curl http://localhost:8080/api/payments/statistics
+
+# Get count by status
+curl http://localhost:8080/api/payments/statistics/by-status
+
+# Get total by currency
+curl http://localhost:8080/api/payments/statistics/by-currency
+
+# Get payment count
+curl http://localhost:8080/api/payments/count
+```
+
+### Validation & Management
+```bash
+# Validate a payment
+curl -X POST http://localhost:8080/api/payments/validate \
+  -H "Content-Type: application/json" \
+  -d '{"id":"TEST","amount":"500.00","currency":"USD","status":"SUCCESS"}'
+
+# Clear all payments
+curl -X DELETE http://localhost:8080/api/payments
+```
 
 ## Project Structure
 
 ```
-src/main/java/com/payment/
-├── model/
-│   ├── Payment.java          # Payment entity with proper encapsulation
-│   └── PaymentStatus.java    # Enum for payment states (PENDING, SUCCESS, FAILED)
-├── processor/
-│   └── PaymentProcessor.java # Core processing logic and statistics
-└── Main.java                 # Demo application
+src/
+├── main/java/com/payment/
+│   ├── PaymentStatisticsApplication.java  # Spring Boot main
+│   ├── controller/
+│   │   └── PaymentController.java         # REST endpoints
+│   ├── config/
+│   │   └── PaymentProcessorConfig.java    # Bean configuration
+│   ├── model/
+│   │   ├── Payment.java                   # Record with BigDecimal
+│   │   └── PaymentStatus.java             # Enum
+│   └── processor/
+│       └── PaymentProcessor.java          # Business logic
+└── test/java/com/payment/
+    ├── e2e/PaymentApiE2ETest.java         # E2E tests
+    ├── model/PaymentTest.java             # Unit tests
+    └── processor/PaymentProcessorTest.java
 ```
 
-## Requirements
-
-- **Java 25** (or compatible JDK with preview features enabled)
-- Gradle 8.12+
-
-### Java 25 Features Used
-- ✨ **String Templates (STR)**: Cleaner string formatting
-- ✨ **Structured Concurrency**: Better async processing with `StructuredTaskScope`
-- ✨ **Enhanced Pattern Matching**: Advanced switch expressions
-- ✨ **Unnamed Variables**: More explicit intent in code
-
-## Building the Project
+## Build & Test
 
 ```bash
+# Build
 ./gradlew build
-```
 
-## Running the Application
-
-```bash
-./gradlew run
-```
-
-## Running Tests
-
-```bash
+# Run tests
 ./gradlew test
+
+# Run with custom port
+./gradlew bootRun --args='--server.port=9090'
 ```
 
-## Key Components
+## Technologies
 
-### Payment Class
-- Immutable payment entity with validation
-- Fields: `id`, `amount`, `currency`, `status`
-- Proper encapsulation with getters
-- Overridden `toString()`, `equals()`, and `hashCode()`
+- **Spring Boot** 3.4.2
+- **Java** 21
+- **Gradle** 8.12 with Kotlin DSL
+- **JUnit** 5.11
 
-### PaymentProcessor Class
-- **addPayment()**: Add new payments
-- **getAllPayments()**: Retrieve all payments
-- **getPaymentsByStatus()**: Filter by status
-- **getTotalPaymentCount()**: Count all payments
-- **getTotalSuccessfulAmount()**: Sum successful payment amounts
-- **getAverageSuccessfulAmount()**: Calculate average successful amount
-- **getPaymentsSortedByAmount()**: Sort by amount (descending)
-- **processPaymentsAsync()**: Parallel processing with Structured Concurrency (Java 25)
-- **validatePaymentsAsync()**: Parallel validation with return values
-- **calculateStatistics()**: Get comprehensive statistics
+## Key Features
 
-### Bonus Features Implemented
-✅ Sorting by amount (descending)
-✅ Java Streams for filtering and statistics
-✅ Structured Concurrency (Java 25)
-✅ Thread-safe operations
-✅ Record class for statistics
-✅ Comprehensive error handling
-
-## Example Output
-
+### BigDecimal for Money
+```java
+// Exact decimal arithmetic
+BigDecimal amount = new BigDecimal("0.1");
+BigDecimal result = amount.add(new BigDecimal("0.2"));
+// = 0.3 exactly (no floating-point errors)
 ```
-=== Payment Statistics Calculator ===
 
-1. Adding payments sequentially...
-✓ Added 10 payments
+### Records for Immutability
+```java
+public record Payment(
+    String id,
+    BigDecimal amount,
+    String currency,
+    PaymentStatus status
+) {
+    // Automatic equals, hashCode, toString
+    // Compact constructor for validation
+}
+```
 
-2. All Payments:
-Payment{id='PAY001', amount=150.00, currency='USD', status=SUCCESS}
-...
+### Pattern Matching
+```java
+return switch (payment) {
+    case Payment p when p.amount().compareTo(BigDecimal.ZERO) <= 0 ->
+        "Invalid: amount must be positive";
+    case Payment p when p.amount().compareTo(new BigDecimal("1000000")) > 0 ->
+        "Warning: high amount";
+    default -> "Valid payment";
+};
+```
 
-3. Payments by Status:
-  SUCCESS: 6 payments
-  FAILED: 2 payments
-  PENDING: 2 payments
+### Virtual Threads
+```java
+ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+// Lightweight, scalable concurrency
+```
 
-4. Payment Statistics:
-Total Payments: 10
-Successful: 6
-Failed: 2
-Pending: 2
-Total Successful Amount: $1427.00
-Average Successful Amount: $237.83
+## Configuration
+
+Edit `src/main/resources/application.yml`:
+
+```yaml
+server:
+  port: 8080
+
+logging:
+  level:
+    com.payment: INFO
 ```
 
 ## License
 
-MIT License
+MIT

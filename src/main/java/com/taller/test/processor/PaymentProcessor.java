@@ -1,6 +1,5 @@
 package com.taller.test.processor;
 
-
 import com.taller.test.model.Payment;
 import com.taller.test.model.PaymentStatus;
 
@@ -10,6 +9,11 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
+/**
+ * Processes and manages payment transactions with statistics calculation.
+ * Uses Java 25 features: Virtual Threads, Enhanced Pattern Matching
+ * Uses BigDecimal for accurate financial calculations.
+ */
 public class PaymentProcessor {
     private final Map<String, Payment> payments;
     private final ExecutorService virtualThreadExecutor;
