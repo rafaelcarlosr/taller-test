@@ -2,6 +2,10 @@ package com.taller.test.processor;
 
 import com.taller.test.model.Payment;
 import com.taller.test.model.PaymentStatus;
+import com.taller.test.repository.PaymentRepository;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -13,55 +17,70 @@ import java.util.stream.Collectors;
  * Processes and manages payment transactions with statistics calculation.
  * Uses Java 25 features: Virtual Threads, Enhanced Pattern Matching
  * Uses BigDecimal for accurate financial calculations.
+ * Integrated with PostgreSQL via JPA and Redis caching.
  */
+@Service
+@Transactional
 public class PaymentProcessor {
-    private final Map<String, Payment> payments;
+    private final PaymentRepository repository;
     private final ExecutorService virtualThreadExecutor;
 
-    public PaymentProcessor() {
-        this.payments = new ConcurrentHashMap<>();
+    public PaymentProcessor(PaymentRepository repository) {
+        this.repository = repository;
+        // Java 21+ Virtual Threads - lightweight, scalable concurrency
         this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     }
 
     /**
-     * Adds a new payment to the processor.
+     * Adds a new payment to the database.
      *
      * @param payment the payment to add
      * @throws IllegalArgumentException if a payment with the same ID already exists
      */
-    public void addPayment(Payment payment) {
+    public Payment addPayment(Payment payment) {
         Objects.requireNonNull(payment, "Payment cannot be null");
 
-        if (payments.containsKey(payment.id())) {
+        if (repository.existsById(payment.getId())) {
             throw new IllegalArgumentException(
-                String.format("Payment with ID %s already exists", payment.id())
+                String.format("Payment with ID %s already exists", payment.getId())
             );
         }
 
-        payments.put(payment.id(), payment);
+        return repository.save(payment);
+    }
+
+    /**
+     * Retrieves a payment by ID.
+     *
+     * @param id the payment ID
+     * @return Optional containing the payment if found
+     */
+    @Transactional(readOnly = true)
+    public Optional<Payment> getPaymentById(String id) {
+        return repository.findById(id);
     }
 
     /**
      * Retrieves all payments.
      *
-     * @return an unmodifiable list of all payments
+     * @return a list of all payments
      */
+    @Transactional(readOnly = true)
     public List<Payment> getAllPayments() {
-        return List.copyOf(payments.values());
+        return repository.findAll();
     }
 
     /**
      * Retrieves payments filtered by status.
+     * Results are cached in Redis.
      *
      * @param status the status to filter by
      * @return a list of payments with the specified status
      */
+    @Transactional(readOnly = true)
     public List<Payment> getPaymentsByStatus(PaymentStatus status) {
         Objects.requireNonNull(status, "Status cannot be null");
-
-        return payments.values().stream()
-                .filter(payment -> payment.status() == status)
-                .toList();
+        return repository.findByStatus(status);
     }
 
     /**
@@ -69,8 +88,9 @@ public class PaymentProcessor {
      *
      * @return the total count of payments
      */
-    public int getTotalPaymentCount() {
-        return payments.size();
+    @Transactional(readOnly = true)
+    public long getTotalPaymentCount() {
+        return repository.count();
     }
 
     /**
@@ -78,11 +98,10 @@ public class PaymentProcessor {
      *
      * @return the sum of all successful payment amounts
      */
+    @Transactional(readOnly = true)
     public BigDecimal getTotalSuccessfulAmount() {
-        return payments.values().stream()
-                .filter(payment -> payment.status() == PaymentStatus.SUCCESS)
-                .map(Payment::amount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal total = repository.sumAmountByStatus(PaymentStatus.SUCCESS);
+        return total != null ? total : BigDecimal.ZERO;
     }
 
     /**
@@ -90,21 +109,17 @@ public class PaymentProcessor {
      *
      * @return the average amount, or BigDecimal.ZERO if no successful payments exist
      */
+    @Transactional(readOnly = true)
     public BigDecimal getAverageSuccessfulAmount() {
-        List<Payment> successfulPayments = payments.values().stream()
-                .filter(payment -> payment.status() == PaymentStatus.SUCCESS)
-                .toList();
+        long successCount = repository.countByStatus(PaymentStatus.SUCCESS);
 
-        if (successfulPayments.isEmpty()) {
+        if (successCount == 0) {
             return BigDecimal.ZERO;
         }
 
-        BigDecimal total = successfulPayments.stream()
-                .map(Payment::amount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
+        BigDecimal total = getTotalSuccessfulAmount();
         return total.divide(
-            BigDecimal.valueOf(successfulPayments.size()),
+            BigDecimal.valueOf(successCount),
             2,
             RoundingMode.HALF_UP
         );
@@ -112,13 +127,13 @@ public class PaymentProcessor {
 
     /**
      * Retrieves payments sorted by amount in descending order.
+     * Results are cached in Redis.
      *
      * @return a list of payments sorted by amount (highest first)
      */
+    @Transactional(readOnly = true)
     public List<Payment> getPaymentsSortedByAmount() {
-        return payments.values().stream()
-                .sorted(Comparator.comparing(Payment::amount).reversed())
-                .toList();
+        return repository.findAllByOrderByAmountDesc();
     }
 
     /**
@@ -126,12 +141,13 @@ public class PaymentProcessor {
      *
      * @return a map of status to count of payments
      */
+    @Transactional(readOnly = true)
     public Map<PaymentStatus, Long> getPaymentCountByStatus() {
-        return payments.values().stream()
-                .collect(Collectors.groupingBy(
-                        Payment::status,
-                        Collectors.counting()
-                ));
+        Map<PaymentStatus, Long> result = new HashMap<>();
+        for (PaymentStatus status : PaymentStatus.values()) {
+            result.put(status, repository.countByStatus(status));
+        }
+        return result;
     }
 
     /**
@@ -139,13 +155,14 @@ public class PaymentProcessor {
      *
      * @return a map of currency to total amount
      */
+    @Transactional(readOnly = true)
     public Map<String, BigDecimal> getTotalAmountByCurrency() {
-        return payments.values().stream()
+        return repository.findAll().stream()
                 .collect(Collectors.groupingBy(
-                        Payment::currency,
+                        Payment::getCurrency,
                         Collectors.reducing(
                             BigDecimal.ZERO,
-                            Payment::amount,
+                            Payment::getAmount,
                             BigDecimal::add
                         )
                 ));
@@ -165,11 +182,11 @@ public class PaymentProcessor {
                         // Simulate processing delay
                         Thread.sleep(100);
                         addPayment(payment);
-                        System.out.println(String.format("Processed: %s", payment.id()));
+                        System.out.println(String.format("Processed: %s", payment.getId()));
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         throw new RuntimeException(
-                            String.format("Payment processing interrupted for %s", payment.id()), e
+                            String.format("Payment processing interrupted for %s", payment.getId()), e
                         );
                     }
                 }, virtualThreadExecutor))
@@ -187,14 +204,14 @@ public class PaymentProcessor {
                 .map(payment -> CompletableFuture.supplyAsync(() -> {
                     // Use enhanced pattern matching for validation
                     return switch (payment) {
-                        case Payment p when p.amount().compareTo(new BigDecimal("10000")) > 0 ->
-                            String.format("⚠ High-value payment: %s", p.id());
-                        case Payment p when p.status() == PaymentStatus.FAILED ->
-                            String.format("✗ Failed payment: %s", p.id());
-                        case Payment p when p.status() == PaymentStatus.PENDING ->
-                            String.format("⏳ Pending payment: %s", p.id());
+                        case Payment p when p.getAmount().compareTo(new BigDecimal("10000")) > 0 ->
+                            String.format("⚠ High-value payment: %s", p.getId());
+                        case Payment p when p.getStatus() == PaymentStatus.FAILED ->
+                            String.format("✗ Failed payment: %s", p.getId());
+                        case Payment p when p.getStatus() == PaymentStatus.PENDING ->
+                            String.format("⏳ Pending payment: %s", p.getId());
                         default ->
-                            String.format("✓ Valid: %s", payment.id());
+                            String.format("✓ Valid: %s", payment.getId());
                     };
                 }, virtualThreadExecutor))
                 .toList();
@@ -207,24 +224,19 @@ public class PaymentProcessor {
 
     /**
      * Calculates comprehensive payment statistics.
+     * Results are cached in Redis.
      *
      * @return a PaymentStatistics object containing all calculated statistics
      */
+    @Transactional(readOnly = true)
+    @Cacheable("paymentStatistics")
     public PaymentStatistics calculateStatistics() {
-        long successCount = payments.values().stream()
-                .filter(p -> p.status() == PaymentStatus.SUCCESS)
-                .count();
-
-        long failedCount = payments.values().stream()
-                .filter(p -> p.status() == PaymentStatus.FAILED)
-                .count();
-
-        long pendingCount = payments.values().stream()
-                .filter(p -> p.status() == PaymentStatus.PENDING)
-                .count();
+        long successCount = repository.countByStatus(PaymentStatus.SUCCESS);
+        long failedCount = repository.countByStatus(PaymentStatus.FAILED);
+        long pendingCount = repository.countByStatus(PaymentStatus.PENDING);
 
         return new PaymentStatistics(
-                getTotalPaymentCount(),
+                (int) repository.count(),
                 successCount,
                 failedCount,
                 pendingCount,
@@ -234,10 +246,10 @@ public class PaymentProcessor {
     }
 
     /**
-     * Clears all payments from the processor.
+     * Clears all payments from the database.
      */
     public void clear() {
-        payments.clear();
+        repository.deleteAll();
     }
 
     /**
@@ -252,6 +264,7 @@ public class PaymentProcessor {
      * Uses modern Java record features with custom methods.
      * Uses BigDecimal for accurate financial calculations.
      */
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
     public record PaymentStatistics(
             int totalPayments,
             long successfulPayments,

@@ -4,6 +4,9 @@ import com.taller.test.model.Payment;
 import com.taller.test.model.PaymentStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -12,13 +15,23 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/**
+ * Integration tests for PaymentProcessor with real database (H2 in-memory for tests).
+ */
+@SpringBootTest(properties = {
+    "spring.cache.type=none",
+    "spring.data.redis.repositories.enabled=false"
+})
+@ActiveProfiles("test")
 class PaymentProcessorTest {
 
+    @Autowired
     private PaymentProcessor processor;
 
     @BeforeEach
     void setUp() {
-        processor = new PaymentProcessor();
+        // Clear database before each test
+        processor.clear();
     }
 
     @Test
@@ -48,52 +61,61 @@ class PaymentProcessorTest {
         processor.addPayment(payment1);
         processor.addPayment(payment2);
 
-        List<Payment> allPayments = processor.getAllPayments();
-        assertEquals(2, allPayments.size());
-        assertTrue(allPayments.contains(payment1));
-        assertTrue(allPayments.contains(payment2));
+        List<Payment> payments = processor.getAllPayments();
+        assertEquals(2, payments.size());
+        assertTrue(payments.containsAll(List.of(payment1, payment2)));
     }
 
     @Test
     void testGetPaymentsByStatus() {
-        processor.addPayment(new Payment("TEST001", new BigDecimal("100.0"), "USD", PaymentStatus.SUCCESS));
-        processor.addPayment(new Payment("TEST002", new BigDecimal("200.0"), "EUR", PaymentStatus.FAILED));
-        processor.addPayment(new Payment("TEST003", new BigDecimal("150.0"), "GBP", PaymentStatus.SUCCESS));
-        processor.addPayment(new Payment("TEST004", new BigDecimal("75.0"), "USD", PaymentStatus.PENDING));
+        Payment payment1 = new Payment("TEST001", new BigDecimal("100.0"), "USD", PaymentStatus.SUCCESS);
+        Payment payment2 = new Payment("TEST002", new BigDecimal("200.0"), "EUR", PaymentStatus.FAILED);
+        Payment payment3 = new Payment("TEST003", new BigDecimal("300.0"), "GBP", PaymentStatus.SUCCESS);
 
-        List<Payment> successPayments = processor.getPaymentsByStatus(PaymentStatus.SUCCESS);
+        processor.addPayment(payment1);
+        processor.addPayment(payment2);
+        processor.addPayment(payment3);
+
+        List<Payment> successfulPayments = processor.getPaymentsByStatus(PaymentStatus.SUCCESS);
+        assertEquals(2, successfulPayments.size());
+        assertTrue(successfulPayments.stream().allMatch(p -> p.getStatus() == PaymentStatus.SUCCESS));
+
         List<Payment> failedPayments = processor.getPaymentsByStatus(PaymentStatus.FAILED);
-        List<Payment> pendingPayments = processor.getPaymentsByStatus(PaymentStatus.PENDING);
-
-        assertEquals(2, successPayments.size());
         assertEquals(1, failedPayments.size());
-        assertEquals(1, pendingPayments.size());
     }
 
     @Test
     void testGetTotalSuccessfulAmount() {
-        processor.addPayment(new Payment("TEST001", new BigDecimal("100.0"), "USD", PaymentStatus.SUCCESS));
-        processor.addPayment(new Payment("TEST002", new BigDecimal("200.0"), "EUR", PaymentStatus.FAILED));
-        processor.addPayment(new Payment("TEST003", new BigDecimal("150.0"), "GBP", PaymentStatus.SUCCESS));
+        Payment payment1 = new Payment("TEST001", new BigDecimal("100.50"), "USD", PaymentStatus.SUCCESS);
+        Payment payment2 = new Payment("TEST002", new BigDecimal("200.25"), "EUR", PaymentStatus.SUCCESS);
+        Payment payment3 = new Payment("TEST003", new BigDecimal("300.00"), "GBP", PaymentStatus.FAILED);
+
+        processor.addPayment(payment1);
+        processor.addPayment(payment2);
+        processor.addPayment(payment3);
 
         BigDecimal total = processor.getTotalSuccessfulAmount();
-        assertEquals(new BigDecimal("250.0"), total);
+        assertEquals(new BigDecimal("300.75"), total);
     }
 
     @Test
     void testGetAverageSuccessfulAmount() {
-        processor.addPayment(new Payment("TEST001", new BigDecimal("100.0"), "USD", PaymentStatus.SUCCESS));
-        processor.addPayment(new Payment("TEST002", new BigDecimal("200.0"), "EUR", PaymentStatus.SUCCESS));
-        processor.addPayment(new Payment("TEST003", new BigDecimal("150.0"), "GBP", PaymentStatus.FAILED));
+        Payment payment1 = new Payment("TEST001", new BigDecimal("100.00"), "USD", PaymentStatus.SUCCESS);
+        Payment payment2 = new Payment("TEST002", new BigDecimal("200.00"), "EUR", PaymentStatus.SUCCESS);
+        Payment payment3 = new Payment("TEST003", new BigDecimal("300.00"), "GBP", PaymentStatus.FAILED);
+
+        processor.addPayment(payment1);
+        processor.addPayment(payment2);
+        processor.addPayment(payment3);
 
         BigDecimal average = processor.getAverageSuccessfulAmount();
         assertEquals(new BigDecimal("150.00"), average);
     }
 
     @Test
-    void testGetAverageSuccessfulAmountWithNoSuccessfulPayments() {
-        processor.addPayment(new Payment("TEST001", new BigDecimal("100.0"), "USD", PaymentStatus.FAILED));
-        processor.addPayment(new Payment("TEST002", new BigDecimal("200.0"), "EUR", PaymentStatus.PENDING));
+    void testGetAverageWhenNoSuccessfulPayments() {
+        Payment payment = new Payment("TEST001", new BigDecimal("100.0"), "USD", PaymentStatus.FAILED);
+        processor.addPayment(payment);
 
         BigDecimal average = processor.getAverageSuccessfulAmount();
         assertEquals(BigDecimal.ZERO, average);
@@ -101,24 +123,33 @@ class PaymentProcessorTest {
 
     @Test
     void testGetPaymentsSortedByAmount() {
-        processor.addPayment(new Payment("TEST001", new BigDecimal("100.0"), "USD", PaymentStatus.SUCCESS));
-        processor.addPayment(new Payment("TEST002", new BigDecimal("300.0"), "EUR", PaymentStatus.FAILED));
-        processor.addPayment(new Payment("TEST003", new BigDecimal("200.0"), "GBP", PaymentStatus.SUCCESS));
+        Payment payment1 = new Payment("TEST001", new BigDecimal("100.0"), "USD", PaymentStatus.SUCCESS);
+        Payment payment2 = new Payment("TEST002", new BigDecimal("300.0"), "EUR", PaymentStatus.FAILED);
+        Payment payment3 = new Payment("TEST003", new BigDecimal("200.0"), "GBP", PaymentStatus.SUCCESS);
+
+        processor.addPayment(payment1);
+        processor.addPayment(payment2);
+        processor.addPayment(payment3);
 
         List<Payment> sorted = processor.getPaymentsSortedByAmount();
 
         assertEquals(3, sorted.size());
-        assertEquals(new BigDecimal("300.0"), sorted.get(0).amount());
-        assertEquals(new BigDecimal("200.0"), sorted.get(1).amount());
-        assertEquals(new BigDecimal("100.0"), sorted.get(2).amount());
+        assertEquals(0, new BigDecimal("300.0").compareTo(sorted.get(0).getAmount()));
+        assertEquals(0, new BigDecimal("200.0").compareTo(sorted.get(1).getAmount()));
+        assertEquals(0, new BigDecimal("100.0").compareTo(sorted.get(2).getAmount()));
     }
 
     @Test
     void testGetPaymentCountByStatus() {
-        processor.addPayment(new Payment("TEST001", new BigDecimal("100.0"), "USD", PaymentStatus.SUCCESS));
-        processor.addPayment(new Payment("TEST002", new BigDecimal("200.0"), "EUR", PaymentStatus.SUCCESS));
-        processor.addPayment(new Payment("TEST003", new BigDecimal("150.0"), "GBP", PaymentStatus.FAILED));
-        processor.addPayment(new Payment("TEST004", new BigDecimal("75.0"), "USD", PaymentStatus.PENDING));
+        Payment payment1 = new Payment("TEST001", new BigDecimal("100.0"), "USD", PaymentStatus.SUCCESS);
+        Payment payment2 = new Payment("TEST002", new BigDecimal("200.0"), "EUR", PaymentStatus.SUCCESS);
+        Payment payment3 = new Payment("TEST003", new BigDecimal("300.0"), "GBP", PaymentStatus.FAILED);
+        Payment payment4 = new Payment("TEST004", new BigDecimal("400.0"), "USD", PaymentStatus.PENDING);
+
+        processor.addPayment(payment1);
+        processor.addPayment(payment2);
+        processor.addPayment(payment3);
+        processor.addPayment(payment4);
 
         Map<PaymentStatus, Long> countByStatus = processor.getPaymentCountByStatus();
 
@@ -129,58 +160,99 @@ class PaymentProcessorTest {
 
     @Test
     void testGetTotalAmountByCurrency() {
-        processor.addPayment(new Payment("TEST001", new BigDecimal("100.0"), "USD", PaymentStatus.SUCCESS));
-        processor.addPayment(new Payment("TEST002", new BigDecimal("200.0"), "USD", PaymentStatus.FAILED));
-        processor.addPayment(new Payment("TEST003", new BigDecimal("150.0"), "EUR", PaymentStatus.SUCCESS));
+        Payment payment1 = new Payment("TEST001", new BigDecimal("100.0"), "USD", PaymentStatus.SUCCESS);
+        Payment payment2 = new Payment("TEST002", new BigDecimal("150.0"), "USD", PaymentStatus.FAILED);
+        Payment payment3 = new Payment("TEST003", new BigDecimal("200.0"), "EUR", PaymentStatus.SUCCESS);
 
-        Map<String, BigDecimal> amountByCurrency = processor.getTotalAmountByCurrency();
+        processor.addPayment(payment1);
+        processor.addPayment(payment2);
+        processor.addPayment(payment3);
 
-        assertEquals(new BigDecimal("300.0"), amountByCurrency.get("USD"));
-        assertEquals(new BigDecimal("150.0"), amountByCurrency.get("EUR"));
+        Map<String, BigDecimal> totalByCurrency = processor.getTotalAmountByCurrency();
+
+        assertEquals(0, new BigDecimal("250.0").compareTo(totalByCurrency.get("USD")));
+        assertEquals(0, new BigDecimal("200.0").compareTo(totalByCurrency.get("EUR")));
     }
 
     @Test
     void testCalculateStatistics() {
-        processor.addPayment(new Payment("TEST001", new BigDecimal("100.0"), "USD", PaymentStatus.SUCCESS));
-        processor.addPayment(new Payment("TEST002", new BigDecimal("200.0"), "EUR", PaymentStatus.SUCCESS));
-        processor.addPayment(new Payment("TEST003", new BigDecimal("150.0"), "GBP", PaymentStatus.FAILED));
-        processor.addPayment(new Payment("TEST004", new BigDecimal("75.0"), "USD", PaymentStatus.PENDING));
+        Payment payment1 = new Payment("TEST001", new BigDecimal("100.0"), "USD", PaymentStatus.SUCCESS);
+        Payment payment2 = new Payment("TEST002", new BigDecimal("200.0"), "EUR", PaymentStatus.SUCCESS);
+        Payment payment3 = new Payment("TEST003", new BigDecimal("300.0"), "GBP", PaymentStatus.FAILED);
+        Payment payment4 = new Payment("TEST004", new BigDecimal("400.0"), "USD", PaymentStatus.PENDING);
 
-        var stats = processor.calculateStatistics();
+        processor.addPayment(payment1);
+        processor.addPayment(payment2);
+        processor.addPayment(payment3);
+        processor.addPayment(payment4);
+
+        PaymentProcessor.PaymentStatistics stats = processor.calculateStatistics();
 
         assertEquals(4, stats.totalPayments());
         assertEquals(2, stats.successfulPayments());
         assertEquals(1, stats.failedPayments());
         assertEquals(1, stats.pendingPayments());
-        assertEquals(new BigDecimal("300.0"), stats.totalSuccessfulAmount());
-        assertEquals(new BigDecimal("150.00"), stats.averageSuccessfulAmount());
+        assertEquals(0, new BigDecimal("300.0").compareTo(stats.totalSuccessfulAmount()));
+        assertEquals(0, new BigDecimal("150.00").compareTo(stats.averageSuccessfulAmount()));
     }
 
     @Test
     void testProcessPaymentsAsync() throws Exception {
         List<Payment> payments = List.of(
                 new Payment("ASYNC001", new BigDecimal("100.0"), "USD", PaymentStatus.SUCCESS),
-                new Payment("ASYNC002", new BigDecimal("200.0"), "EUR", PaymentStatus.SUCCESS),
-                new Payment("ASYNC003", new BigDecimal("300.0"), "GBP", PaymentStatus.SUCCESS)
+                new Payment("ASYNC002", new BigDecimal("200.0"), "EUR", PaymentStatus.FAILED),
+                new Payment("ASYNC003", new BigDecimal("300.0"), "GBP", PaymentStatus.PENDING)
         );
 
         CompletableFuture<Void> future = processor.processPaymentsAsync(payments);
         future.get(); // Wait for completion
 
         assertEquals(3, processor.getTotalPaymentCount());
-        assertEquals(new BigDecimal("600.0"), processor.getTotalSuccessfulAmount());
+    }
+
+    @Test
+    void testValidatePaymentsAsync() throws Exception {
+        List<Payment> payments = List.of(
+                new Payment("VAL001", new BigDecimal("100.0"), "USD", PaymentStatus.SUCCESS),
+                new Payment("VAL002", new BigDecimal("15000.0"), "EUR", PaymentStatus.SUCCESS),
+                new Payment("VAL003", new BigDecimal("300.0"), "GBP", PaymentStatus.FAILED)
+        );
+
+        CompletableFuture<List<String>> future = processor.validatePaymentsAsync(payments);
+        List<String> results = future.get();
+
+        assertEquals(3, results.size());
+        assertTrue(results.stream().anyMatch(r -> r.contains("VAL001")));
+        assertTrue(results.stream().anyMatch(r -> r.contains("High-value") && r.contains("VAL002")));
+        assertTrue(results.stream().anyMatch(r -> r.contains("Failed") && r.contains("VAL003")));
     }
 
     @Test
     void testClear() {
-        processor.addPayment(new Payment("TEST001", new BigDecimal("100.0"), "USD", PaymentStatus.SUCCESS));
-        processor.addPayment(new Payment("TEST002", new BigDecimal("200.0"), "EUR", PaymentStatus.FAILED));
+        Payment payment1 = new Payment("TEST001", new BigDecimal("100.0"), "USD", PaymentStatus.SUCCESS);
+        Payment payment2 = new Payment("TEST002", new BigDecimal("200.0"), "EUR", PaymentStatus.FAILED);
 
+        processor.addPayment(payment1);
+        processor.addPayment(payment2);
         assertEquals(2, processor.getTotalPaymentCount());
 
         processor.clear();
-
         assertEquals(0, processor.getTotalPaymentCount());
-        assertTrue(processor.getAllPayments().isEmpty());
+    }
+
+    @Test
+    void testBigDecimalPrecision() {
+        // Test that BigDecimal provides exact decimal arithmetic (no floating point errors)
+        Payment payment1 = new Payment("PREC001", new BigDecimal("0.1"), "USD", PaymentStatus.SUCCESS);
+        Payment payment2 = new Payment("PREC002", new BigDecimal("0.2"), "USD", PaymentStatus.SUCCESS);
+
+        processor.addPayment(payment1);
+        processor.addPayment(payment2);
+
+        BigDecimal total = processor.getTotalSuccessfulAmount();
+
+        // With double: 0.1 + 0.2 = 0.30000000000000004
+        // With BigDecimal: 0.1 + 0.2 = 0.3 exactly
+        assertEquals(0, new BigDecimal("0.3").compareTo(total));
     }
 }

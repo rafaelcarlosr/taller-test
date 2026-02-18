@@ -1,6 +1,5 @@
 package com.taller.test.e2e;
 
-
 import com.taller.test.model.Payment;
 import com.taller.test.model.PaymentStatus;
 import com.taller.test.processor.PaymentProcessor;
@@ -10,6 +9,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -20,8 +20,16 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * End-to-End Integration Tests for Payment Statistics API.
  * Tests the complete workflow via REST endpoints.
+ * Uses H2 in-memory database for testing (or PostgreSQL via Testcontainers if Docker is available).
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties = {
+        "spring.cache.type=none",
+        "spring.data.redis.repositories.enabled=false"
+    }
+)
+@ActiveProfiles("test")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class PaymentApiE2ETest {
 

@@ -1,26 +1,53 @@
 package com.taller.test.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import jakarta.persistence.*;
+import java.io.Serializable;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Objects;
 
 /**
- * Represents a payment transaction using a Java Record.
- * Java 16+ Feature: Records provide immutable data classes with automatic implementations.
- * Java 25 Feature: Enhanced pattern matching with records
+ * Represents a payment transaction as a JPA entity.
+ * Java 25 Feature: Enhanced pattern matching in validation methods
  *
  * Uses BigDecimal for monetary amounts to avoid floating-point precision issues.
  */
-public record Payment(
-    String id,
-    BigDecimal amount,
-    String currency,
-    PaymentStatus status
-) {
+@Entity
+@Table(name = "payments")
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class Payment implements Serializable {
+
+    @Id
+    @Column(length = 100)
+    private String id;
+
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal amount;
+
+    @Column(nullable = false, length = 3)
+    private String currency;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private PaymentStatus status;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
     /**
-     * Compact constructor with validation.
-     * This runs before field initialization.
+     * Default constructor for JPA.
      */
-    public Payment {
+    protected Payment() {
+    }
+
+    /**
+     * Constructor with required fields.
+     */
+    public Payment(String id, BigDecimal amount, String currency, PaymentStatus status) {
         Objects.requireNonNull(id, "Payment ID cannot be null");
         Objects.requireNonNull(amount, "Payment amount cannot be null");
         Objects.requireNonNull(currency, "Currency cannot be null");
@@ -31,6 +58,28 @@ public record Payment(
                 String.format("Payment amount cannot be negative: %s", amount)
             );
         }
+
+        this.id = id;
+        this.amount = amount;
+        this.currency = currency;
+        this.status = status;
+    }
+
+    /**
+     * JPA lifecycle callback for creation timestamp.
+     */
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * JPA lifecycle callback for update timestamp.
+     */
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
     }
 
     /**
@@ -63,26 +112,77 @@ public record Payment(
         };
     }
 
-    /**
-     * Custom equals using enhanced pattern matching (Java 25).
-     * Note: Records already provide equals(), but this demonstrates pattern matching.
-     */
-    public boolean equalsWithPatternMatching(Object o) {
-        return switch (o) {
-            case null -> false;
-            case Payment p when p == this -> true;
-            case Payment p -> amount.compareTo(p.amount) == 0 &&
-                             Objects.equals(id, p.id) &&
-                             Objects.equals(currency, p.currency) &&
-                             status == p.status;
-            default -> false;
-        };
+    // Getters and Setters
+
+    public String getId() {
+        return id;
     }
 
-    /**
-     * Custom toString with enhanced formatting.
-     * Note: Records auto-generate toString(), but this provides custom formatting.
-     */
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public BigDecimal getAmount() {
+        return amount;
+    }
+
+    public void setAmount(BigDecimal amount) {
+        this.amount = amount;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
+    }
+
+    public PaymentStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(PaymentStatus status) {
+        this.status = status;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    // Record-style accessor methods for backward compatibility
+    public String id() {
+        return id;
+    }
+
+    public BigDecimal amount() {
+        return amount;
+    }
+
+    public String currency() {
+        return currency;
+    }
+
+    public PaymentStatus status() {
+        return status;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Payment payment)) return false;
+        return Objects.equals(id, payment.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(id);
+    }
+
     @Override
     public String toString() {
         return String.format("Payment{id='%s', amount=%s, currency='%s', status=%s}",

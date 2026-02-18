@@ -50,9 +50,7 @@ public class PaymentController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<Payment> getPaymentById(@PathVariable String id) {
-        return processor.getAllPayments().stream()
-                .filter(p -> p.id().equals(id))
-                .findFirst()
+        return processor.getPaymentById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -127,7 +125,7 @@ public class PaymentController {
      * GET /api/payments/count
      */
     @GetMapping("/count")
-    public ResponseEntity<Integer> getPaymentCount() {
+    public ResponseEntity<Long> getPaymentCount() {
         return ResponseEntity.ok(processor.getTotalPaymentCount());
     }
 }
